@@ -1,16 +1,26 @@
 import datetime
 import decimal
 import enum
+import multiprocessing
 
 import nano
+import requests
 import sqlalchemy
+import urllib3
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from retry import retry
 
 decimal.getcontext().prec = 100
 
 CONNECTION_STR = "postgresql://postgres:123456@localhost:5432/postgres"
 RPC_NODE = "http://localhost:7076"
-LEDGER_BATCH_SIZE = 16
+BATCH_SIZE = 1024
+HISTORY_BATCH_SIZE = 1024
+POOL_SIZE = 128
+SQL_ECHO = False
+
+START_ACCOUNT = "nano_1111111111111111111111111111111111111111111111111111hifc8npp"  # account with public key = 0
+# START_ACCOUNT = "nano_1ipx847tk8o46pwxt5qjdbncjqcbwcc1rrmqnkztrfjy5k7z4imsrata9est"
 
 
 class Base(DeclarativeBase):
@@ -34,20 +44,46 @@ class Transaction(Base):
     time: Mapped[datetime.datetime]
 
 
-engine = sqlalchemy.create_engine(CONNECTION_STR, echo=True)
-Base.metadata.create_all(engine)
+engine = sqlalchemy.create_engine(CONNECTION_STR, echo=SQL_ECHO)
+
 
 rpc = nano.rpc.Client(RPC_NODE)
 print(rpc.version())
 
 
+@retry(tries=100)
+def get_account_history(account, start=None):
+    payload = {"account": account, "count": HISTORY_BATCH_SIZE}
+    if start:
+        payload["head"] = start
+
+    resp = rpc.call("account_history", payload)
+
+    history = resp.get("history") or []
+    previous = resp.get("previous") or None
+
+    return history, previous
+
+
 def process_account(account):
-    history = rpc.account_history(account=account, count=-1)
-    # print(account, ":", len(history))
+    cnt = 0
 
-    process_history(account, history)
+    history, previous = get_account_history(account)
+    while len(history) > 0:
+        # print(account, ":", len(history))
 
-    return len(history)
+        process_history(account, history)
+        cnt += len(history)
+
+        if previous:
+            history, previous = get_account_history(account, previous)
+        else:
+            break
+
+    return cnt
+
+
+MNANO = decimal.Decimal("1000000000000000000000000000000")
 
 
 def process_history(source_account, history):
@@ -64,9 +100,7 @@ def process_history(source_account, history):
             timestamp = datetime.datetime.fromtimestamp(int(block["local_timestamp"]))
 
             # convert to the usual nano units
-            amount = decimal.Decimal(block["amount"]) / decimal.Decimal(
-                "1000000000000000000000000000000"
-            )
+            amount = decimal.Decimal(block["amount"]) / MNANO
 
             transaction = Transaction(
                 hash=hash,
@@ -82,18 +116,48 @@ def process_history(source_account, history):
         session.commit()
 
 
-# last_account = "nano_1111111111111111111111111111111111111111111111111111hifc8npp"  # account with public key = 0
-last_account = "nano_1ipx847tk8o46pwxt5qjdbncjqcbwcc1rrmqnkztrfjy5k7z4imsrata9est"
+def main():
+    Base.metadata.create_all(engine)
 
-while True:
-    print("requesting:", last_account)
-    data = rpc.ledger(account=last_account, count=LEDGER_BATCH_SIZE)
+    pool = multiprocessing.get_context("spawn").Pool(POOL_SIZE)
 
-    for account, info in sorted(data.items()):
-        if account == last_account:
-            continue  # prevent processing same account twice
-        last_account = account
+    last_account = START_ACCOUNT
 
-        block_cnt = process_account(account)
+    total_accounts = 0
+    total_blocks = 0
 
-    pass
+    while True:
+        # print("requesting:", last_account)
+        data = rpc.ledger(account=last_account, count=BATCH_SIZE)
+
+        accounts = []
+        for account, info in sorted(data.items()):
+            if account == last_account:
+                continue  # prevent processing same account twice
+            last_account = account
+            accounts.append(account)
+
+            if info["block_count"] > HISTORY_BATCH_SIZE:
+                print("WARNING: account", account, f"has more than {HISTORY_BATCH_SIZE} blocks:", info["block_count"])
+
+        cnts = pool.map(process_account, accounts)
+        cnts_total = sum(cnts)
+
+        total_accounts += len(accounts)
+        total_blocks += cnts_total
+
+        print(
+            "Processed:",
+            total_accounts,
+            "accounts,",
+            total_blocks,
+            "blocks,",
+            "last account:",
+            last_account,
+        )
+
+        pass
+
+
+if __name__ == "__main__":
+    main()
