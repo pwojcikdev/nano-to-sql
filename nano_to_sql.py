@@ -5,9 +5,7 @@ import multiprocessing
 from time import sleep
 
 import nano
-import requests
 import sqlalchemy
-import urllib3
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from retry import retry
 
@@ -74,10 +72,10 @@ def process_account(account):
     while len(history) > 0:
         # print(account, ":", len(history))
 
-        process_history(account, history)
-        cnt += len(history)
+        should_continue, added_cnt = process_history(account, history)
+        cnt += added_cnt
 
-        if previous:
+        if previous and should_continue:
             history, previous = get_account_history(account, previous)
         else:
             break
@@ -89,6 +87,8 @@ MNANO = decimal.Decimal("1000000000000000000000000000000")
 
 
 def process_history(source_account, history):
+    cnt = 0
+
     with Session(engine) as session:
         for block in history:
             # print(source_account, ":", block)
@@ -97,6 +97,10 @@ def process_history(source_account, history):
                 continue  # skip unconfirmed
 
             hash = block["hash"]
+
+            if session.query(Transaction).get(hash) is not None:
+                return False, cnt  # skip already processed, do not continue
+
             tx_type = TxType[block["type"]]
             link = block["account"]
             timestamp = datetime.datetime.fromtimestamp(int(block["local_timestamp"]))
@@ -114,8 +118,11 @@ def process_history(source_account, history):
             )
 
             session.add(transaction)
+            cnt += 1
 
         session.commit()
+
+    return True, cnt  # continue
 
 
 class WorkStealingManager:
