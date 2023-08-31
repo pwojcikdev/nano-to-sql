@@ -118,17 +118,38 @@ def process_history(source_account, history):
         session.commit()
 
 
+class WorkStealingManager:
+    def __init__(self, worker_fn, pool_size):
+        self.worker_fn = worker_fn
+        self.pool = multiprocessing.get_context("spawn").Pool(pool_size)
+        self.waiting_results = []
+
+    def queue_work(self, work_items):
+        for item in work_items:
+            async_result = self.pool.apply_async(self.worker_fn, (item,))
+            self.waiting_results.append(async_result)
+
+    def collect_results(self):
+        results = []
+        for result in self.waiting_results:
+            if result.ready():
+                self.waiting_results.remove(result)
+                results.append(result.get())
+        return results
+
+    def pending_count(self):
+        return len(self.waiting_results)
+
+
 def main():
     Base.metadata.create_all(engine)
 
-    pool = multiprocessing.get_context("spawn").Pool(POOL_SIZE)
+    pool = WorkStealingManager(process_account, POOL_SIZE)
 
     last_account = START_ACCOUNT
 
     total_accounts = 0
     total_blocks = 0
-
-    waiting_results = []
 
     while True:
         # print("requesting:", last_account)
@@ -144,23 +165,12 @@ def main():
             if info["block_count"] > HISTORY_BATCH_SIZE:
                 print("WARNING: account", account, f"has more than {HISTORY_BATCH_SIZE} blocks:", info["block_count"])
 
-        for account in accounts:
-            async_result = pool.apply_async(process_account, (account,))
-            waiting_results.append(async_result)
-
-        def cleanup():
-            loop_total = 0
-            for result in waiting_results:
-                if result.ready():
-                    waiting_results.remove(result)
-                    loop_total += result.get()
-            return loop_total
+        pool.queue_work(accounts)
+        total_accounts += len(accounts)
 
         while True:
-            loop_total = cleanup()
-
-            total_accounts += len(accounts)
-            total_blocks += loop_total
+            results = pool.collect_results()
+            total_blocks += sum(results)
 
             print(
                 "Processed:",
@@ -170,12 +180,10 @@ def main():
                 "blocks,",
                 "last account:",
                 last_account,
-                "(awaiting results:",
-                len(waiting_results),
-                ")",
+                f"(awaiting results: {pool.pending_count()})",
             )
 
-            if len(waiting_results) > AWAITING_MAX:
+            if pool.pending_count() > AWAITING_MAX:
                 # print("NOTICE: awaiting results:", len(waiting_results))
                 sleep(1)
             else:
