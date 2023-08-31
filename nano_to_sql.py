@@ -2,6 +2,7 @@ import datetime
 import decimal
 import enum
 import multiprocessing
+from time import sleep
 
 import nano
 import requests
@@ -14,9 +15,10 @@ decimal.getcontext().prec = 100
 
 CONNECTION_STR = "postgresql://postgres:123456@localhost:5432/postgres"
 RPC_NODE = "http://localhost:7076"
-BATCH_SIZE = 1024 * 16
+BATCH_SIZE = 1024
 HISTORY_BATCH_SIZE = 4096
 POOL_SIZE = 128
+AWAITING_MAX = 1024 * 16
 SQL_ECHO = False
 
 START_ACCOUNT = "nano_1111111111111111111111111111111111111111111111111111hifc8npp"  # account with public key = 0
@@ -126,6 +128,8 @@ def main():
     total_accounts = 0
     total_blocks = 0
 
+    waiting_results = []
+
     while True:
         # print("requesting:", last_account)
         data = rpc.ledger(account=last_account, count=BATCH_SIZE)
@@ -140,21 +144,42 @@ def main():
             if info["block_count"] > HISTORY_BATCH_SIZE:
                 print("WARNING: account", account, f"has more than {HISTORY_BATCH_SIZE} blocks:", info["block_count"])
 
-        results = pool.imap_unordered(process_account, accounts)
-        loop_total = sum(results)
+        for account in accounts:
+            async_result = pool.apply_async(process_account, (account,))
+            waiting_results.append(async_result)
 
-        total_accounts += len(accounts)
-        total_blocks += loop_total
+        def cleanup():
+            loop_total = 0
+            for result in waiting_results:
+                if result.ready():
+                    waiting_results.remove(result)
+                    loop_total += result.get()
+            return loop_total
 
-        print(
-            "Processed:",
-            total_accounts,
-            "accounts,",
-            total_blocks,
-            "blocks,",
-            "last account:",
-            last_account,
-        )
+        while True:
+            loop_total = cleanup()
+
+            total_accounts += len(accounts)
+            total_blocks += loop_total
+
+            print(
+                "Processed:",
+                total_accounts,
+                "accounts,",
+                total_blocks,
+                "blocks,",
+                "last account:",
+                last_account,
+                "(awaiting results:",
+                len(waiting_results),
+                ")",
+            )
+
+            if len(waiting_results) > AWAITING_MAX:
+                # print("NOTICE: awaiting results:", len(waiting_results))
+                sleep(1)
+            else:
+                break
 
         pass
 
