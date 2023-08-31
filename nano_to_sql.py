@@ -14,8 +14,8 @@ decimal.getcontext().prec = 100
 
 CONNECTION_STR = "postgresql://postgres:123456@localhost:5432/postgres"
 RPC_NODE = "http://localhost:7076"
-BATCH_SIZE = 1024
-HISTORY_BATCH_SIZE = 1024
+BATCH_SIZE = 1024 * 16
+HISTORY_BATCH_SIZE = 4096
 POOL_SIZE = 128
 SQL_ECHO = False
 
@@ -140,11 +140,11 @@ def main():
             if info["block_count"] > HISTORY_BATCH_SIZE:
                 print("WARNING: account", account, f"has more than {HISTORY_BATCH_SIZE} blocks:", info["block_count"])
 
-        cnts = pool.map(process_account, accounts)
-        cnts_total = sum(cnts)
+        results = pool.imap_unordered(process_account, accounts)
+        loop_total = sum(results)
 
         total_accounts += len(accounts)
-        total_blocks += cnts_total
+        total_blocks += loop_total
 
         print(
             "Processed:",
