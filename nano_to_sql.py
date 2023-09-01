@@ -165,6 +165,10 @@ def main():
         # print("requesting:", last_account)
         data = rpc.ledger(account=last_account, count=BATCH_SIZE)
 
+        if len(data) == 0:
+            print("WARNING: no more accounts found")
+            break
+
         accounts = []
         for account, info in sorted(data.items()):
             if account == last_account:
@@ -204,3 +208,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    print("Done")
