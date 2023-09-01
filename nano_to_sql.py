@@ -19,6 +19,7 @@ POOL_SIZE = 128
 AWAITING_MAX = 1024 * 16
 SQL_ECHO = False
 BOTTOM_UP = True
+RPC_TIMEOUT = 15
 
 START_ACCOUNT = "nano_1111111111111111111111111111111111111111111111111111hifc8npp"  # account with public key = 0
 # START_ACCOUNT = "nano_1ipx847tk8o46pwxt5qjdbncjqcbwcc1rrmqnkztrfjy5k7z4imsrata9est"
@@ -48,7 +49,7 @@ class Transaction(Base):
 engine = sqlalchemy.create_engine(CONNECTION_STR, echo=SQL_ECHO)
 
 
-rpc = nano.rpc.Client(RPC_NODE)
+rpc = nano.rpc.Client(RPC_NODE, timeout=RPC_TIMEOUT)
 print(rpc.version())
 
 
