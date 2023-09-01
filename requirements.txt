@@ -1,0 +1,5 @@
+sqlalchemy
+psycopg2-binary
+retry
+
+nano-python @ git+https://github.com/pwojcikdev/nano-python.git
