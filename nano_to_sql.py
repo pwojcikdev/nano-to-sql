@@ -18,6 +18,7 @@ HISTORY_BATCH_SIZE = 4096
 POOL_SIZE = 128
 AWAITING_MAX = 1024 * 16
 SQL_ECHO = False
+BOTTOM_UP = True
 
 START_ACCOUNT = "nano_1111111111111111111111111111111111111111111111111111hifc8npp"  # account with public key = 0
 # START_ACCOUNT = "nano_1ipx847tk8o46pwxt5qjdbncjqcbwcc1rrmqnkztrfjy5k7z4imsrata9est"
@@ -53,14 +54,15 @@ print(rpc.version())
 
 @retry(tries=100)
 def get_account_history(account, start=None):
-    payload = {"account": account, "count": HISTORY_BATCH_SIZE}
+    payload = {"account": account, "count": HISTORY_BATCH_SIZE, "reverse": BOTTOM_UP}
     if start:
         payload["head"] = start
 
     resp = rpc.call("account_history", payload)
 
     history = resp.get("history") or []
-    previous = resp.get("previous") or None
+    # previous = resp.get("previous") or None
+    previous = resp.get("next" if BOTTOM_UP else "previous") or None
 
     return history, previous
 
