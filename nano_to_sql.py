@@ -70,7 +70,12 @@ rpc = nano.rpc.Client(RPC_NODE, timeout=RPC_TIMEOUT)
 print(rpc.version())
 
 
-@retry(tries=100)
+@retry(tries=60, delay=1)
+def get_ledger(account):
+    return rpc.ledger(account=account, count=BATCH_SIZE)
+
+
+@retry(tries=60, delay=1)
 def get_account_history(account, start=None):
     payload = {"account": account, "count": HISTORY_BATCH_SIZE, "reverse": BOTTOM_UP}
     if start:
@@ -179,7 +184,7 @@ def main():
 
     while True:
         # print("requesting:", last_account)
-        data = rpc.ledger(account=last_account, count=BATCH_SIZE)
+        data = get_ledger(last_account)
 
         if len(data) == 0:
             print("WARNING: no more accounts found")
