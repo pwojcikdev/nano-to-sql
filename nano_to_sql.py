@@ -196,11 +196,11 @@ def main():
                 print("WARNING: account", account, f"has more than {HISTORY_BATCH_SIZE} blocks:", info["block_count"])
 
         pool.queue_work(accounts)
-        total_accounts += len(accounts)
 
         while True:
             results = pool.collect_results()
             total_blocks += sum(results)
+            total_accounts += len(results)
 
             print(
                 "Processed:",
