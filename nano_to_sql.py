@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import decimal
 import enum
@@ -6,23 +7,39 @@ from time import sleep
 
 import nano
 import sqlalchemy
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from retry import retry
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 decimal.getcontext().prec = 100
 
-CONNECTION_STR = "postgresql://postgres:123456@localhost:5432/postgres"
-RPC_NODE = "http://localhost:7076"
-BATCH_SIZE = 1024
-HISTORY_BATCH_SIZE = 4096
-POOL_SIZE = 128
-AWAITING_MAX = 1024 * 16
-SQL_ECHO = False
-BOTTOM_UP = True
-RPC_TIMEOUT = 15
+ZERO_ACCOUNT = "nano_1111111111111111111111111111111111111111111111111111hifc8npp"  # account with public key = 0
 
-START_ACCOUNT = "nano_1111111111111111111111111111111111111111111111111111hifc8npp"  # account with public key = 0
-# START_ACCOUNT = "nano_1ipx847tk8o46pwxt5qjdbncjqcbwcc1rrmqnkztrfjy5k7z4imsrata9est"
+parser = argparse.ArgumentParser(description="Script for processing Nano transactions")
+
+parser.add_argument("connection", type=str, help="Database connection string")
+parser.add_argument("--rpc-node", type=str, default="http://localhost:7076", help="RPC node address")
+parser.add_argument("--parallelism", type=int, default=32, help="Number of parallel workers")
+parser.add_argument("--awaiting-max", type=int, default=1024, help="Max awaiting results")
+parser.add_argument("--batch-size", type=int, default=1024, help="Batch size")
+parser.add_argument("--history-batch-size", type=int, default=1024, help="History batch size")
+parser.add_argument("--rpc-timeout", type=int, default=15, help="RPC timeout")
+parser.add_argument("--start-account", type=str, default=ZERO_ACCOUNT, help="Starting account address")
+parser.add_argument("--sql-echo", action="store_true", help="Enable SQL echo")
+parser.add_argument("--bottom-up", action="store_true", help="Enable bottom-up processing")
+
+args = parser.parse_args()
+# print(args)
+
+CONNECTION_STR = args.connection
+RPC_NODE = args.rpc_node
+BATCH_SIZE = args.batch_size
+HISTORY_BATCH_SIZE = args.history_batch_size
+PARALLELISM = args.parallelism
+AWAITING_MAX = args.awaiting_max
+SQL_ECHO = args.sql_echo
+BOTTOM_UP = args.bottom_up
+RPC_TIMEOUT = args.rpc_timeout
+START_ACCOUNT = args.start_account
 
 
 class Base(DeclarativeBase):
@@ -62,7 +79,6 @@ def get_account_history(account, start=None):
     resp = rpc.call("account_history", payload)
 
     history = resp.get("history") or []
-    # previous = resp.get("previous") or None
     previous = resp.get("next" if BOTTOM_UP else "previous") or None
 
     return history, previous
@@ -154,7 +170,7 @@ class WorkStealingManager:
 def main():
     Base.metadata.create_all(engine)
 
-    pool = WorkStealingManager(process_account, POOL_SIZE)
+    pool = WorkStealingManager(process_account, PARALLELISM)
 
     last_account = START_ACCOUNT
 
