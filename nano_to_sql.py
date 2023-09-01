@@ -34,14 +34,14 @@ class TxType(enum.Enum):
 
 
 class Transaction(Base):
-    __tablename__ = "transaction"
+    __tablename__ = "transactions"
 
     hash: Mapped[str] = mapped_column(sqlalchemy.String(64), primary_key=True)  # hash
     account: Mapped[str] = mapped_column(sqlalchemy.String(65))  # account
     tx_type: Mapped[TxType]
     amount: Mapped[decimal.Decimal]
     link: Mapped[str] = mapped_column(sqlalchemy.String(65))  # account
-    time: Mapped[datetime.datetime]
+    tstamp: Mapped[datetime.datetime]
 
 
 engine = sqlalchemy.create_engine(CONNECTION_STR, echo=SQL_ECHO)
@@ -114,7 +114,7 @@ def process_history(source_account, history):
                 tx_type=tx_type,
                 amount=amount,
                 link=link,
-                time=timestamp,
+                tstamp=timestamp,
             )
 
             session.add(transaction)
