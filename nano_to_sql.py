@@ -131,6 +131,8 @@ def process_history(source_account, history):
 
             # convert to the usual nano units
             amount = decimal.Decimal(block["amount"]) / MNANO
+            if tx_type == TxType.send:
+                amount = -amount  # sends are negative
 
             transaction = Transaction(
                 hash=hash,
@@ -191,7 +193,7 @@ def main():
             if account == last_account:
                 continue  # prevent processing same account twice
             last_account = account
-            
+
             accounts.append(account)
 
             if info["block_count"] > HISTORY_BATCH_SIZE:
