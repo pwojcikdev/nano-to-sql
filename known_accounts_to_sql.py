@@ -4,6 +4,14 @@ import json
 import sqlalchemy
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
+parser = argparse.ArgumentParser(description="Add known accounts from a JSON file to a database.")
+
+parser.add_argument("connection", type=str, help="SQLAlchemy connection string")
+parser.add_argument("file_path", type=str, help="Path to the knownAccounts.json file")
+parser.add_argument("--sql_echo", type=bool, default=False, help="Print SQL queries (default: False)")
+
+args = parser.parse_args()
+
 
 class Base(DeclarativeBase):
     pass
@@ -21,8 +29,8 @@ def load_accounts_from_json(filename):
         return json.load(file)
 
 
-def main(args):
-    engine = sqlalchemy.create_engine(args.connection_str, echo=args.sql_echo)
+def main():
+    engine = sqlalchemy.create_engine(args.connection, echo=args.sql_echo)
 
     Base.metadata.create_all(engine)
 
@@ -52,11 +60,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Add known accounts from a JSON file to a database.")
-
-    parser.add_argument("connection_str", type=str, help="SQLAlchemy connection string")
-    parser.add_argument("file_path", type=str, help="Path to the knownAccounts.json file")
-    parser.add_argument("--sql_echo", type=bool, default=False, help="Print SQL queries (default: False)")
-
-    args = parser.parse_args()
-    main(args)
+    main()
