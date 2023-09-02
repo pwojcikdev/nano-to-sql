@@ -186,19 +186,20 @@ def main():
         # print("requesting:", last_account)
         data = get_ledger(last_account)
 
-        if len(data) == 0:
-            print("WARNING: no more accounts found")
-            break
-
         accounts = []
         for account, info in sorted(data.items()):
             if account == last_account:
                 continue  # prevent processing same account twice
             last_account = account
+            
             accounts.append(account)
 
             if info["block_count"] > HISTORY_BATCH_SIZE:
                 print("WARNING: account", account, f"has more than {HISTORY_BATCH_SIZE} blocks:", info["block_count"])
+
+        if len(accounts) == 0:
+            print("WARNING: no more accounts found")
+            break
 
         pool.queue_work(accounts)
 
